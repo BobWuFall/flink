@@ -20,6 +20,9 @@ package org.apache.flink.core.memory;
 
 import org.apache.flink.annotation.Internal;
 
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -30,7 +33,9 @@ import java.nio.ByteBuffer;
 import java.nio.ReadOnlyBufferException;
 
 /**
- * This class represents a piece of memory managed by Flink. The memory can be on-heap or off-heap,
+ * This class represents a piece of memory managed by Flink.
+ *
+ * <p>The memory can be on-heap, off-heap direct or off-heap unsafe,
  * this is transparently handled by this class.
  *
  * <p>This class specializes byte access and byte copy calls for heap memory, while reusing the
@@ -44,53 +49,28 @@ import java.nio.ReadOnlyBufferException;
  */
 @Internal
 public final class HybridMemorySegment extends MemorySegment {
-
 	/**
-	 * The direct byte buffer that allocated the off-heap memory. This memory segment holds a
+	 * The direct byte buffer that wraps the off-heap memory. This memory segment holds a
 	 * reference to that buffer, so as long as this memory segment lives, the memory will not be
 	 * released.
 	 */
+	@Nullable
 	private final ByteBuffer offHeapBuffer;
 
 	/**
-	 * Creates a new memory segment that represents the memory backing the given direct byte buffer.
-	 * Note that the given ByteBuffer must be direct {@link java.nio.ByteBuffer#allocateDirect(int)},
-	 * otherwise this method with throw an IllegalArgumentException.
-	 *
-	 * <p>The owner referenced by this memory segment is null.
-	 *
-	 * @param buffer The byte buffer whose memory is represented by this memory segment.
-	 * @throws IllegalArgumentException Thrown, if the given ByteBuffer is not direct.
-	 */
-	HybridMemorySegment(ByteBuffer buffer) {
-		this(buffer, null);
-	}
-
-	/**
-	 * Creates a new memory segment that represents the memory backing the given direct byte buffer.
-	 * Note that the given ByteBuffer must be direct {@link java.nio.ByteBuffer#allocateDirect(int)},
-	 * otherwise this method with throw an IllegalArgumentException.
-	 *
-	 * <p>The memory segment references the given owner.
-	 *
-	 * @param buffer The byte buffer whose memory is represented by this memory segment.
-	 * @param owner The owner references by this memory segment.
-	 * @throws IllegalArgumentException Thrown, if the given ByteBuffer is not direct.
-	 */
-	HybridMemorySegment(ByteBuffer buffer, Object owner) {
+	  * Creates a new memory segment that represents the memory backing the given direct byte buffer.
+	  * Note that the given ByteBuffer must be direct {@link java.nio.ByteBuffer#allocateDirect(int)},
+	  * otherwise this method with throw an IllegalArgumentException.
+	  *
+	  * <p>The memory segment references the given owner.
+	  *
+	  * @param buffer The byte buffer whose memory is represented by this memory segment.
+	  * @param owner The owner references by this memory segment.
+	  * @throws IllegalArgumentException Thrown, if the given ByteBuffer is not direct.
+	  */
+	HybridMemorySegment(@Nonnull ByteBuffer buffer, @Nullable Object owner) {
 		super(checkBufferAndGetAddress(buffer), buffer.capacity(), owner);
 		this.offHeapBuffer = buffer;
-	}
-
-	/**
-	 * Creates a new memory segment that represents the memory of the byte array.
-	 *
-	 * <p>The owner referenced by this memory segment is null.
-	 *
-	 * @param buffer The byte array whose memory is represented by this memory segment.
-	 */
-	HybridMemorySegment(byte[] buffer) {
-		this(buffer, null);
 	}
 
 	/**
@@ -302,6 +282,9 @@ public final class HybridMemorySegment extends MemorySegment {
 		if ((offset | numBytes | (offset + numBytes)) < 0) {
 			throw new IndexOutOfBoundsException();
 		}
+		if (target.isReadOnly()) {
+			throw new ReadOnlyBufferException();
+		}
 
 		final int targetOffset = target.position();
 		final int remaining = target.remaining();
@@ -311,10 +294,6 @@ public final class HybridMemorySegment extends MemorySegment {
 		}
 
 		if (target.isDirect()) {
-			if (target.isReadOnly()) {
-				throw new ReadOnlyBufferException();
-			}
-
 			// copy to the target memory directly
 			final long targetPointer = getAddress(target) + targetOffset;
 			final long sourcePointer = address + offset;
@@ -339,10 +318,8 @@ public final class HybridMemorySegment extends MemorySegment {
 			target.position(targetOffset + numBytes);
 		}
 		else {
-			// neither heap buffer nor direct buffer
-			while (target.hasRemaining()) {
-				target.put(get(offset++));
-			}
+			// other types of byte buffers
+			throw new IllegalArgumentException("The target buffer is not direct, and has no array.");
 		}
 	}
 
@@ -385,8 +362,8 @@ public final class HybridMemorySegment extends MemorySegment {
 			source.position(sourceOffset + numBytes);
 		}
 		else {
-			// neither heap buffer nor direct buffer
-			while (source.hasRemaining()) {
+			// other types of byte buffers
+			for (int i = 0; i < numBytes; i++) {
 				put(offset++, source.get());
 			}
 		}

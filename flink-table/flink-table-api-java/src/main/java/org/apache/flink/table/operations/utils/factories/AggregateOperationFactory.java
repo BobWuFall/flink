@@ -503,8 +503,8 @@ public final class AggregateOperationFactory {
 
 		@Override
 		protected Boolean defaultMethod(LogicalType logicalType) {
-			if (logicalType.getTypeRoot() == LogicalTypeRoot.ANY) {
-				// we don't know anything about the ANY type, we don't know if it is comparable and hashable.
+			if (logicalType.getTypeRoot() == LogicalTypeRoot.RAW) {
+				// we don't know anything about the RAW type, we don't know if it is comparable and hashable.
 				return false;
 			} else if (logicalType instanceof LegacyTypeInformationType) {
 				return ((LegacyTypeInformationType) logicalType).getTypeInformation().isKeyType();
@@ -518,11 +518,11 @@ public final class AggregateOperationFactory {
 	 * Extract a table aggregate Expression and it's aliases.
 	 */
 	public Tuple2<ResolvedExpression, List<String>> extractTableAggFunctionAndAliases(Expression callExpr) {
-		TableAggFunctionCallVisitor visitor = new TableAggFunctionCallVisitor();
+		TableAggFunctionCallResolver visitor = new TableAggFunctionCallResolver();
 		return Tuple2.of(callExpr.accept(visitor), visitor.getAlias());
 	}
 
-	private class TableAggFunctionCallVisitor extends ResolvedExpressionDefaultVisitor<ResolvedExpression> {
+	private class TableAggFunctionCallResolver extends ResolvedExpressionDefaultVisitor<ResolvedExpression> {
 
 		private List<String> alias = new LinkedList<>();
 

@@ -108,7 +108,7 @@ impact.
 
 For state to be snapshotted asynchronsously, you need to use a state backend which supports asynchronous snapshotting.
 Starting from Flink 1.3, both RocksDB-based as well as heap-based state backends (`filesystem`) support asynchronous
-snapshotting and use it by default. This applies to to both managed operator state as well as managed keyed state (incl. timers state).
+snapshotting and use it by default. This applies to both managed operator state as well as managed keyed state (incl. timers state).
 
 <span class="label label-info">Note</span> *The combination RocksDB state backend with heap-based timers currently does NOT support asynchronous snapshots for the timers state.
 Other state like keyed state is still snapshotted asynchronously. Please note that this is not a regression from previous versions and will be resolved with `FLINK-10026`.*
@@ -140,7 +140,7 @@ by default. To enable this feature, users can instantiate a `RocksDBStateBackend
 
 **RocksDB Timers**
 
-For RocksDB, a user can chose whether timers are stored on the heap (default) or inside RocksDB. Heap-based timers can have a better performance for smaller numbers of
+For RocksDB, a user can chose whether timers are stored on the heap or inside RocksDB (default). Heap-based timers can have a better performance for smaller numbers of
 timers, while storing timers inside RocksDB offers higher scalability as the number of timers in RocksDB can exceed the available main memory (spilling to disk).
 
 When using RockDB as state backend, the type of timer storage can be selected through Flink's configuration via option key `state.backend.rocksdb.timer-service.factory`.

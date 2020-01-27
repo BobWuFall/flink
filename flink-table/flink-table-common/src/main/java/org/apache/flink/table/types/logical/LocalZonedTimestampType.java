@@ -43,7 +43,7 @@ import java.util.Set;
  * the current session for computation and visualization.
  *
  * <p>This type fills the gap between time zone free and time zone mandatory timestamp types by allowing
- * the interpretation of UTC timestamps according to the configured session timezone. A conversion
+ * the interpretation of UTC timestamps according to the configured session time zone. A conversion
  * from and to {@code int} describes the number of seconds since epoch. A conversion from and to {@code long}
  * describes the number of milliseconds since epoch.
  *
@@ -64,7 +64,8 @@ public final class LocalZonedTimestampType extends LogicalType {
 	private static final Set<String> NULL_OUTPUT_CONVERSION = conversionSet(
 		java.time.Instant.class.getName(),
 		Integer.class.getName(),
-		Long.class.getName());
+		Long.class.getName(),
+		"org.apache.flink.table.dataformat.SqlTimestamp");
 
 	private static final Set<String> NOT_NULL_INPUT_OUTPUT_CONVERSION = conversionSet(
 		java.time.Instant.class.getName(),

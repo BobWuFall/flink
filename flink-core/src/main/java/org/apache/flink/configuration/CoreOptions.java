@@ -23,7 +23,9 @@ import org.apache.flink.annotation.docs.ConfigGroup;
 import org.apache.flink.annotation.docs.ConfigGroups;
 import org.apache.flink.annotation.docs.Documentation;
 import org.apache.flink.configuration.description.Description;
-import org.apache.flink.util.ArrayUtils;
+
+import org.apache.flink.shaded.guava18.com.google.common.base.Splitter;
+import org.apache.flink.shaded.guava18.com.google.common.collect.Iterables;
 
 import static org.apache.flink.configuration.ConfigOptions.key;
 
@@ -92,7 +94,7 @@ public class CoreOptions {
 	 */
 	public static final ConfigOption<String> ALWAYS_PARENT_FIRST_LOADER_PATTERNS = ConfigOptions
 		.key("classloader.parent-first-patterns.default")
-		.defaultValue("java.;scala.;org.apache.flink.;com.esotericsoftware.kryo;org.apache.hadoop.;javax.annotation.;org.slf4j;org.apache.log4j;org.apache.logging;org.apache.commons.logging;ch.qos.logback")
+		.defaultValue("java.;scala.;org.apache.flink.;com.esotericsoftware.kryo;org.apache.hadoop.;javax.annotation.;org.slf4j;org.apache.log4j;org.apache.logging;org.apache.commons.logging;ch.qos.logback;org.xml;javax.xml;org.apache.xerces;org.w3c")
 		.withDeprecatedKeys("classloader.parent-first-patterns")
 		.withDescription("A (semicolon-separated) list of patterns that specifies which classes should always be" +
 			" resolved through the parent ClassLoader first. A pattern is a simple prefix that is checked against" +
@@ -109,16 +111,45 @@ public class CoreOptions {
 	public static String[] getParentFirstLoaderPatterns(Configuration config) {
 		String base = config.getString(ALWAYS_PARENT_FIRST_LOADER_PATTERNS);
 		String append = config.getString(ALWAYS_PARENT_FIRST_LOADER_PATTERNS_ADDITIONAL);
+		return parseParentFirstLoaderPatterns(base, append);
+	}
 
-		String[] basePatterns = base.isEmpty()
-			? new String[0]
-			: base.split(";");
+	/**
+	 * Plugin-specific option of {@link #ALWAYS_PARENT_FIRST_LOADER_PATTERNS}. Plugins use this parent first list
+	 * instead of the global version.
+	 */
+	@Documentation.ExcludeFromDocumentation("Plugin classloader list is considered an implementation detail. " +
+		"Configuration only included in case to mitigate unintended side-effects of this young feature.")
+	public static final ConfigOption<String> PLUGIN_ALWAYS_PARENT_FIRST_LOADER_PATTERNS = ConfigOptions
+		.key("plugin.classloader.parent-first-patterns.default")
+		.stringType()
+		.defaultValue("java.;scala.;org.apache.flink.;javax.annotation.;org.slf4j;org.apache.log4j;org.apache" +
+			".logging;org.apache.commons.logging;ch.qos.logback")
+		.withDescription("A (semicolon-separated) list of patterns that specifies which classes should always be" +
+			" resolved through the plugin parent ClassLoader first. A pattern is a simple prefix that is checked " +
+			" against the fully qualified class name. This setting should generally not be modified. To add another " +
+			" pattern we recommend to use \"plugin.classloader.parent-first-patterns.additional\" instead.");
 
-		if (append.isEmpty()) {
-			return basePatterns;
-		} else {
-			return ArrayUtils.concat(basePatterns, append.split(";"));
-		}
+	@Documentation.ExcludeFromDocumentation("Plugin classloader list is considered an implementation detail. " +
+		"Configuration only included in case to mitigate unintended side-effects of this young feature.")
+	public static final ConfigOption<String> PLUGIN_ALWAYS_PARENT_FIRST_LOADER_PATTERNS_ADDITIONAL = ConfigOptions
+		.key("plugin.classloader.parent-first-patterns.additional")
+		.stringType()
+		.defaultValue("")
+		.withDescription("A (semicolon-separated) list of patterns that specifies which classes should always be" +
+			" resolved through the plugin parent ClassLoader first. A pattern is a simple prefix that is checked " +
+			" against the fully qualified class name. These patterns are appended to \"" +
+			PLUGIN_ALWAYS_PARENT_FIRST_LOADER_PATTERNS.key() + "\".");
+
+	public static String[] getPluginParentFirstLoaderPatterns(Configuration config) {
+		String base = config.getString(PLUGIN_ALWAYS_PARENT_FIRST_LOADER_PATTERNS);
+		String append = config.getString(PLUGIN_ALWAYS_PARENT_FIRST_LOADER_PATTERNS_ADDITIONAL);
+		return parseParentFirstLoaderPatterns(base, append);
+	}
+
+	private static String[] parseParentFirstLoaderPatterns(String base, String append) {
+		Splitter splitter = Splitter.on(';').omitEmptyStrings();
+		return Iterables.toArray(Iterables.concat(splitter.split(base), splitter.split(append)), String.class);
 	}
 
 	// ------------------------------------------------------------------------
@@ -236,7 +267,7 @@ public class CoreOptions {
 			.key("fs.default-scheme")
 			.noDefaultValue()
 			.withDescription("The default filesystem scheme, used for paths that do not declare a scheme explicitly." +
-				" May contain an authority, e.g. host:port in case of a HDFS NameNode.");
+				" May contain an authority, e.g. host:port in case of an HDFS NameNode.");
 
 	/**
 	 * Specifies whether file output writers should overwrite existing files by default.

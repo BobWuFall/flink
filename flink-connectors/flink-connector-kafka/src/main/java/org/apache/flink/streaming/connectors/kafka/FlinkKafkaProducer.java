@@ -118,7 +118,7 @@ public class FlinkKafkaProducer<IN>
 		 * case any subsequent {@link FlinkKafkaProducer#snapshotState(FunctionSnapshotContext)} requests will fail
 		 * and {@link FlinkKafkaProducer} will keep using the {@link FlinkKafkaInternalProducer}
 		 * from the previous checkpoint.
-		 * To decrease the chance of failing checkpoints there are three options:
+		 * To decrease the chance of failing checkpoints there are four options:
 		 * <li>decrease number of max concurrent checkpoints</li>
 		 * <li>make checkpoints more reliable (so that they complete faster)</li>
 		 * <li>increase the delay between checkpoints</li>
@@ -266,11 +266,11 @@ public class FlinkKafkaProducer<IN>
 
 	/** The callback than handles error propagation or logging callbacks. */
 	@Nullable
-	private transient Callback callback;
+	protected transient Callback callback;
 
 	/** Errors encountered in the async producer are stored here. */
 	@Nullable
-	private transient volatile Exception asyncException;
+	protected transient volatile Exception asyncException;
 
 	/** Number of unacknowledged records. */
 	private final AtomicLong pendingRecords = new AtomicLong();
@@ -947,7 +947,12 @@ public class FlinkKafkaProducer<IN>
 		}
 	}
 
-	private void acknowledgeMessage() {
+	/**
+	 * <b>ATTENTION to subclass implementors:</b> When overriding this method, please always call
+	 * {@code super.acknowledgeMessage()} to keep the invariants of the internal bookkeeping of the producer.
+	 * If not, be sure to know what you are doing.
+	 */
+	protected void acknowledgeMessage() {
 		pendingRecords.decrementAndGet();
 	}
 
@@ -1057,8 +1062,8 @@ public class FlinkKafkaProducer<IN>
 	}
 
 	@Override
-	protected void finishRecoveringContext() {
-		cleanUpUserContext();
+	protected void finishRecoveringContext(Collection<FlinkKafkaProducer.KafkaTransactionState> handledTransactions) {
+		cleanUpUserContext(handledTransactions);
 		resetAvailableTransactionalIdsPool(getUserContext().get().transactionalIds);
 		LOG.info("Recovered transactionalIds {}", getUserContext().get().transactionalIds);
 	}
@@ -1069,12 +1074,18 @@ public class FlinkKafkaProducer<IN>
 
 	/**
 	 * After initialization make sure that all previous transactions from the current user context have been completed.
+	 *
+	 * @param handledTransactions
+	 * 		transactions which were already committed or aborted and do not need further handling
 	 */
-	private void cleanUpUserContext() {
+	private void cleanUpUserContext(Collection<FlinkKafkaProducer.KafkaTransactionState> handledTransactions) {
 		if (!getUserContext().isPresent()) {
 			return;
 		}
-		abortTransactions(getUserContext().get().transactionalIds);
+		HashSet<String> abortTransactions = new HashSet<>(getUserContext().get().transactionalIds);
+		handledTransactions.forEach(
+			kafkaTransactionState -> abortTransactions.remove(kafkaTransactionState.transactionalId));
+		abortTransactions(abortTransactions);
 	}
 
 	private void resetAvailableTransactionalIdsPool(Collection<String> transactionalIds) {
@@ -1084,14 +1095,21 @@ public class FlinkKafkaProducer<IN>
 
 	// ----------------------------------- Utilities --------------------------
 
-	private void abortTransactions(Set<String> transactionalIds) {
-		for (String transactionalId : transactionalIds) {
+	private void abortTransactions(final Set<String> transactionalIds) {
+		transactionalIds.parallelStream().forEach(transactionalId -> {
+			// don't mess with the original configuration or any other properties of the
+			// original object
+			// -> create an internal kafka producer on our own and do not rely on
+			//    initTransactionalProducer().
+			final Properties myConfig = new Properties();
+			myConfig.putAll(producerConfig);
+			initTransactionalProducerConfig(myConfig, transactionalId);
 			try (FlinkKafkaInternalProducer<byte[], byte[]> kafkaProducer =
-				initTransactionalProducer(transactionalId, false)) {
-				// it suffice to call initTransactions - this will abort any lingering transactions
+					new FlinkKafkaInternalProducer<>(myConfig)) {
+				// it suffices to call initTransactions - this will abort any lingering transactions
 				kafkaProducer.initTransactions();
 			}
-		}
+		});
 	}
 
 	int getTransactionCoordinatorId() {
@@ -1125,12 +1143,16 @@ public class FlinkKafkaProducer<IN>
 	}
 
 	private FlinkKafkaInternalProducer<byte[], byte[]> initTransactionalProducer(String transactionalId, boolean registerMetrics) {
-		producerConfig.put("transactional.id", transactionalId);
+		initTransactionalProducerConfig(producerConfig, transactionalId);
 		return initProducer(registerMetrics);
 	}
 
+	private static void initTransactionalProducerConfig(Properties producerConfig, String transactionalId) {
+		producerConfig.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
+	}
+
 	private FlinkKafkaInternalProducer<byte[], byte[]> initNonTransactionalProducer(boolean registerMetrics) {
-		producerConfig.remove("transactional.id");
+		producerConfig.remove(ProducerConfig.TRANSACTIONAL_ID_CONFIG);
 		return initProducer(registerMetrics);
 	}
 
